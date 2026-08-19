@@ -1,285 +1,531 @@
-import React, { useState, useEffect } from "react";
-import TaskCard from "./TaskCard";
-import FilterBar from "./FilterBar";
-import TaskModal from "./TaskModal";
-import { taskApi } from "../api/taskApi";
+import React, { useState, useMemo } from "react";
 
-const COLUMNS = [
+const initialTasks = [
   {
-    id: "TODO",
-    title: "할 일",
-    subtitle: "To Do",
-    icon: "📌",
-    accentColor: "bg-amber-500",
-    badgeBg: "bg-amber-100 text-amber-800 border-amber-200/60",
-    columnBg: "bg-slate-100/70 border-slate-200/80",
-    dragOverStyle: "ring-2 ring-amber-400/60 border-amber-300 bg-amber-50/40",
+    id: "1",
+    title: "API Integration",
+    status: "TODO",
+    priority: "HIGH",
+    tag: "Dev",
   },
   {
-    id: "IN_PROGRESS",
-    title: "진행 중",
-    subtitle: "In Progress",
-    icon: "⚡",
-    accentColor: "bg-indigo-500",
-    badgeBg: "bg-indigo-100 text-indigo-800 border-indigo-200/60",
-    columnBg: "bg-indigo-50/30 border-indigo-100/80",
-    dragOverStyle:
-      "ring-2 ring-indigo-400/60 border-indigo-300 bg-indigo-50/60",
+    id: "2",
+    title: "User Testing",
+    status: "TODO",
+    priority: "LOW",
+    tag: "QA",
   },
   {
-    id: "DONE",
-    title: "완료",
-    subtitle: "Done",
-    icon: "✅",
-    accentColor: "bg-emerald-500",
-    badgeBg: "bg-emerald-100 text-emerald-800 border-emerald-200/60",
-    columnBg: "bg-emerald-50/30 border-emerald-100/80",
-    dragOverStyle:
-      "ring-2 ring-emerald-400/60 border-emerald-300 bg-emerald-50/60",
+    id: "3",
+    title: "Design UI/UX",
+    status: "IN_PROGRESS",
+    priority: "MEDIUM",
+    tag: "Design",
+  },
+  {
+    id: "4",
+    title: "Initialize Project",
+    status: "DONE",
+    priority: "HIGH",
+    tag: "Dev",
   },
 ];
 
+const COLUMNS = [
+  { id: "TODO", title: "To Do" },
+  { id: "IN_PROGRESS", title: "In Progress" },
+  { id: "DONE", title: "Done" },
+];
+
 export default function KanbanBoard() {
-  const [tasks, setTasks] = useState([]);
-  const [searchKeyword, setSearchKeyword] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("ALL");
+  const [tasks, setTasks] = useState(initialTasks);
+  const [priorityFilter, setPriorityFilter] = useState("All");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isAdding, setIsAdding] = useState(false);
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [newTaskPriority, setNewTaskPriority] = useState("MEDIUM");
+  const [newTaskTag, setNewTaskTag] = useState("Dev");
 
-  const [draggedTaskId, setDraggedTaskId] = useState(null);
-  const [dragOverColumnId, setDragOverColumnId] = useState(null); // 드래그 오버 시 시각 효과용
-
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedTask, setSelectedTask] = useState(null);
-
-  useEffect(() => {
-    fetchTasks();
-  }, []);
-
-  const fetchTasks = async () => {
-    try {
-      const data = await taskApi.getAllTasks();
-      if (Array.isArray(data)) {
-        setTasks(data);
-      } else if (data && Array.isArray(data.content)) {
-        setTasks(data.content);
-      } else {
-        setTasks([]);
-      }
-    } catch (error) {
-      console.error("Task 목록 조회 실패:", error);
-      setTasks([]);
-    }
+  const moveTask = (id, direction) => {
+    setTasks((prev) =>
+      prev.map((task) => {
+        if (task.id !== id) return task;
+        if (direction === "next") {
+          const nextStatus = task.status === "TODO" ? "IN_PROGRESS" : "DONE";
+          return { ...task, status: nextStatus };
+        } else {
+          const prevStatus = task.status === "DONE" ? "IN_PROGRESS" : "TODO";
+          return { ...task, status: prevStatus };
+        }
+      }),
+    );
   };
 
-  // 드래그 앤 드롭 이벤트
-  const handleDragStart = (e, id) => {
-    setDraggedTaskId(id);
-    e.dataTransfer.effectAllowed = "move";
+  const deleteTask = (id) => {
+    setTasks((prev) => prev.filter((t) => t.id !== id));
   };
 
-  const handleDragOver = (e, colId) => {
+  const handleAddTask = (e) => {
     e.preventDefault();
-    if (dragOverColumnId !== colId) {
-      setDragOverColumnId(colId);
-    }
+    if (!newTaskTitle.trim()) return;
+    const newTask = {
+      id: Date.now().toString(),
+      title: newTaskTitle,
+      status: "TODO",
+      priority: newTaskPriority,
+      tag: newTaskTag,
+    };
+    setTasks((prev) => [...prev, newTask]);
+    setNewTaskTitle("");
+    setIsAdding(false);
   };
 
-  const handleDragLeave = (e, colId) => {
-    // 컬럼 내부 자식 요소를 지나갈 때 발생하는 dragLeave 방지
-    if (e.currentTarget.contains(e.relatedTarget)) return;
-    if (dragOverColumnId === colId) {
-      setDragOverColumnId(null);
-    }
-  };
-
-  const handleDrop = async (e, targetStatus) => {
-    e.preventDefault();
-    setDragOverColumnId(null);
-    if (!draggedTaskId) return;
-
-    // UI 즉시 반영 (낙관적 업데이트)
-    setTasks((prev) => {
-      const currentList = Array.isArray(prev) ? prev : [];
-      return currentList.map((t) =>
-        t.id === draggedTaskId ? { ...t, status: targetStatus } : t,
-      );
-    });
-
-    try {
-      await taskApi.updateTaskStatus(draggedTaskId, targetStatus);
-    } catch (error) {
-      console.error("상태 변경 실패:", error);
-      fetchTasks();
-    } finally {
-      setDraggedTaskId(null);
-    }
-  };
-
-  // 모달 제어
-  const handleOpenCreateModal = () => {
-    setSelectedTask(null);
-    setIsModalOpen(true);
-  };
-
-  const handleOpenEditModal = (task) => {
-    setSelectedTask(task);
-    setIsModalOpen(true);
-  };
-
-  const handleSaveTask = async (formData) => {
-    try {
-      if (selectedTask) {
-        await taskApi.updateTask(selectedTask.id, formData);
-      } else {
-        await taskApi.createTask(formData);
-      }
-      setIsModalOpen(false);
-      fetchTasks();
-    } catch (error) {
-      console.error("Task 저장 실패:", error);
-    }
-  };
-
-  const handleDeleteTask = async (id) => {
-    if (!window.confirm("정말 삭제하시겠습니까?")) return;
-    try {
-      await taskApi.deleteTask(id);
-      setTasks((prev) => {
-        const currentList = Array.isArray(prev) ? prev : [];
-        return currentList.filter((t) => t.id !== id);
-      });
-    } catch (error) {
-      console.error("Task 삭제 실패:", error);
-    }
-  };
-
-  // 필터링
-  const safeTasks = Array.isArray(tasks) ? tasks : [];
-  const filteredTasks = safeTasks.filter((t) => {
-    if (!t) return false;
-    const title = t.title || "";
-    const matchesKeyword = title
+  const filteredTasks = tasks.filter((task) => {
+    const matchesPriority =
+      priorityFilter === "All" || task.priority === priorityFilter;
+    const matchesSearch = task.title
       .toLowerCase()
-      .includes(searchKeyword.toLowerCase());
-    const matchesCategory =
-      selectedCategory === "ALL" || t.category === selectedCategory;
-    return matchesKeyword && matchesCategory;
+      .includes(searchQuery.toLowerCase());
+    return matchesPriority && matchesSearch;
   });
 
+  const metrics = useMemo(() => {
+    const total = tasks.length;
+    const done = tasks.filter((t) => t.status === "DONE").length;
+    const completion = total > 0 ? Math.round((done / total) * 100) : 0;
+    const highPriority = tasks.filter((t) => t.priority === "HIGH").length;
+    const inProgress = tasks.filter((t) => t.status === "IN_PROGRESS").length;
+
+    return { completion, highPriority, inProgress };
+  }, [tasks]);
+
   return (
-    <div className="min-h-screen bg-slate-50/60 text-slate-800 antialiased p-4 sm:p-6 md:p-8">
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* 상단 대시보드 헤더 */}
-        <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200/60">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 animate-pulse" />
-              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
-                Task Workspace
-              </h1>
-            </div>
-            <p className="text-xs sm:text-sm text-slate-500 font-medium">
-              스프링 부트 & React 기반 칸반 보드
-            </p>
-          </div>
+    <div
+      style={{
+        maxWidth: "900px",
+        margin: "0 auto",
+        padding: "24px",
+        fontFamily: "sans-serif",
+        color: "#334155",
+      }}
+    >
+      {/* 타이틀 */}
+      <h1
+        style={{
+          fontSize: "24px",
+          fontWeight: "bold",
+          marginBottom: "20px",
+          color: "#0f172a",
+        }}
+      >
+        Kanban Task Manager
+      </h1>
 
-          {/* 전체 작업 통계 요약 뱃지 */}
-          <div className="flex items-center gap-3">
-            <div className="px-3.5 py-1.5 rounded-xl bg-white border border-slate-200/80 shadow-sm text-xs font-semibold text-slate-600 flex items-center gap-2">
-              <span className="text-slate-400">전체 태스크</span>
-              <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-600 font-bold">
-                {safeTasks.length}개
-              </span>
-            </div>
-          </div>
-        </header>
-
-        {/* 필터 및 검색 바 */}
-        <FilterBar
-          searchKeyword={searchKeyword}
-          setSearchKeyword={setSearchKeyword}
-          selectedCategory={selectedCategory}
-          setSelectedCategory={setSelectedCategory}
-          onOpenCreateModal={handleOpenCreateModal}
-        />
-
-        {/* 칸반 보드 컬럼 그리드 */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+      {/* 보드 영역 */}
+      <div
+        style={{
+          backgroundColor: "#f1f5f9",
+          padding: "16px",
+          borderRadius: "16px",
+          border: "1px solid #e2e8f0",
+          marginBottom: "24px",
+        }}
+      >
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(3, 1fr)",
+            gap: "16px",
+          }}
+        >
           {COLUMNS.map((col) => {
             const columnTasks = filteredTasks.filter(
               (t) => t.status === col.id,
             );
-            const isDraggingOver = dragOverColumnId === col.id;
 
             return (
               <div
                 key={col.id}
-                onDragOver={(e) => handleDragOver(e, col.id)}
-                onDragLeave={(e) => handleDragLeave(e, col.id)}
-                onDrop={(e) => handleDrop(e, col.id)}
-                className={`relative p-4 rounded-2xl border transition-all duration-200 flex flex-col min-h-[620px] backdrop-blur-sm ${
-                  col.columnBg
-                } ${isDraggingOver ? col.dragOverStyle : "shadow-sm"}`}
+                style={{
+                  backgroundColor: "#e2e8f0",
+                  padding: "12px",
+                  borderRadius: "12px",
+                  minHeight: "360px",
+                }}
               >
-                {/* 컬럼 상단 Accent Line */}
-                <div
-                  className={`absolute top-0 left-6 right-6 h-1 rounded-b-full ${col.accentColor}`}
-                />
-
                 {/* 컬럼 헤더 */}
-                <div className="flex items-center justify-between pt-1 pb-3 mb-3 border-b border-slate-200/70">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">{col.icon}</span>
-                    <h2 className="font-bold text-slate-800 text-base">
-                      {col.title}
-                    </h2>
-                    <span className="text-xs text-slate-400 font-normal">
-                      ({col.subtitle})
-                    </span>
-                  </div>
-
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: "12px",
+                  }}
+                >
+                  <span style={{ fontWeight: "bold", fontSize: "14px" }}>
+                    {col.title}
+                  </span>
                   <span
-                    className={`text-xs font-bold px-2.5 py-0.5 rounded-full border shadow-2xs ${col.badgeBg}`}
+                    style={{
+                      backgroundColor: "#475569",
+                      color: "#fff",
+                      fontSize: "11px",
+                      fontWeight: "bold",
+                      width: "20px",
+                      height: "20px",
+                      borderRadius: "50%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
                   >
                     {columnTasks.length}
                   </span>
                 </div>
 
-                {/* 태스크 카드 목록 */}
-                <div className="flex-1 space-y-3.5">
+                {/* 태스크 카드 */}
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "10px",
+                  }}
+                >
                   {columnTasks.map((task) => (
-                    <TaskCard
+                    <div
                       key={task.id}
-                      task={task}
-                      onDragStart={handleDragStart}
-                      onClick={handleOpenEditModal}
-                      onDelete={handleDeleteTask}
-                    />
-                  ))}
+                      style={{
+                        backgroundColor: "#fff",
+                        padding: "12px",
+                        borderRadius: "10px",
+                        border: "1px solid #cbd5e1",
+                        boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          marginBottom: "8px",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: "10px",
+                            fontWeight: "bold",
+                            padding: "2px 6px",
+                            borderRadius: "4px",
+                            backgroundColor:
+                              task.priority === "HIGH"
+                                ? "#dbeafe"
+                                : task.priority === "MEDIUM"
+                                  ? "#dcfce7"
+                                  : "#fef3c7",
+                            color:
+                              task.priority === "HIGH"
+                                ? "#2563eb"
+                                : task.priority === "MEDIUM"
+                                  ? "#16a34a"
+                                  : "#d97706",
+                          }}
+                        >
+                          {task.priority}
+                        </span>
+                        <button
+                          onClick={() => deleteTask(task.id)}
+                          style={{
+                            border: "none",
+                            background: "none",
+                            cursor: "pointer",
+                            color: "#94a3b8",
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
 
-                  {/* 작업 미존재 시 Empty State */}
-                  {columnTasks.length === 0 && (
-                    <div className="h-40 flex flex-col items-center justify-center gap-1.5 text-xs text-slate-400 border-2 border-dashed border-slate-300/60 rounded-xl bg-white/40">
-                      <span className="text-lg">📥</span>
-                      <p className="font-medium">등록된 작업이 없습니다</p>
-                      <p className="text-[11px] text-slate-400/80">
-                        카드를 드래그하여 이동해보세요
+                      <p
+                        style={{
+                          fontWeight: "600",
+                          fontSize: "13px",
+                          margin: "0 0 10px 0",
+                          color: "#1e293b",
+                        }}
+                      >
+                        {task.title}
                       </p>
+
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                        }}
+                      >
+                        <span style={{ fontSize: "11px", color: "#94a3b8" }}>
+                          #{task.tag}
+                        </span>
+                        <div style={{ display: "flex", gap: "4px" }}>
+                          {task.status !== "TODO" && (
+                            <button
+                              onClick={() => moveTask(task.id, "prev")}
+                              style={{
+                                padding: "2px 6px",
+                                border: "1px solid #cbd5e1",
+                                borderRadius: "4px",
+                                background: "#fff",
+                                cursor: "pointer",
+                                fontSize: "11px",
+                              }}
+                            >
+                              ←
+                            </button>
+                          )}
+                          {task.status !== "DONE" && (
+                            <button
+                              onClick={() => moveTask(task.id, "next")}
+                              style={{
+                                padding: "2px 6px",
+                                border: "1px solid #cbd5e1",
+                                borderRadius: "4px",
+                                background: "#fff",
+                                cursor: "pointer",
+                                fontSize: "11px",
+                              }}
+                            >
+                              →
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  )}
+                  ))}
                 </div>
               </div>
             );
           })}
         </div>
-
-        {/* 등록/수정 모달 */}
-        <TaskModal
-          isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
-          onSubmit={handleSaveTask}
-          initialData={selectedTask}
-        />
       </div>
+
+      {/* 하단 지표 */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-around",
+          alignItems: "center",
+          padding: "12px 0",
+          marginBottom: "24px",
+          borderTop: "1px solid #e2e8f0",
+          borderBottom: "1px solid #e2e8f0",
+        }}
+      >
+        <div style={{ textAlign: "center" }}>
+          <div
+            style={{
+              fontSize: "10px",
+              fontWeight: "bold",
+              color: "#64748b",
+              marginBottom: "4px",
+            }}
+          >
+            COMPLETION
+          </div>
+          <div style={{ fontSize: "18px", fontWeight: "bold" }}>
+            {metrics.completion}%
+          </div>
+        </div>
+        <div
+          style={{ width: "1px", height: "24px", backgroundColor: "#cbd5e1" }}
+        />
+        <div style={{ textAlign: "center" }}>
+          <div
+            style={{
+              fontSize: "10px",
+              fontWeight: "bold",
+              color: "#64748b",
+              marginBottom: "4px",
+            }}
+          >
+            HIGH PRIORITY
+          </div>
+          <div style={{ fontSize: "18px", fontWeight: "bold" }}>
+            {metrics.highPriority}
+          </div>
+        </div>
+        <div
+          style={{ width: "1px", height: "24px", backgroundColor: "#cbd5e1" }}
+        />
+        <div style={{ textAlign: "center" }}>
+          <div
+            style={{
+              fontSize: "10px",
+              fontWeight: "bold",
+              color: "#64748b",
+              marginBottom: "4px",
+            }}
+          >
+            IN PROGRESS
+          </div>
+          <div style={{ fontSize: "18px", fontWeight: "bold" }}>
+            {metrics.inProgress}
+          </div>
+        </div>
+      </div>
+
+      {/* 필터 및 검색 */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: "12px",
+          marginBottom: "16px",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <label style={{ fontSize: "12px", fontWeight: "600", width: "50px" }}>
+            Priority
+          </label>
+          <select
+            value={priorityFilter}
+            onChange={(e) => setPriorityFilter(e.target.value)}
+            style={{
+              flex: 1,
+              padding: "8px",
+              borderRadius: "8px",
+              border: "1px solid #cbd5e1",
+              backgroundColor: "#f8fafc",
+              fontSize: "12px",
+            }}
+          >
+            <option value="All">All</option>
+            <option value="HIGH">HIGH</option>
+            <option value="MEDIUM">MEDIUM</option>
+            <option value="LOW">LOW</option>
+          </select>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <label style={{ fontSize: "12px", fontWeight: "600", width: "50px" }}>
+            Search
+          </label>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{
+              flex: 1,
+              padding: "8px",
+              borderRadius: "8px",
+              border: "1px solid #cbd5e1",
+              backgroundColor: "#f8fafc",
+              fontSize: "12px",
+            }}
+          />
+        </div>
+      </div>
+
+      {/* 추가 버튼 */}
+      {!isAdding ? (
+        <button
+          onClick={() => setIsAdding(true)}
+          style={{
+            width: "100%",
+            padding: "12px",
+            backgroundColor: "#e2e8f0",
+            border: "none",
+            borderRadius: "12px",
+            fontSize: "12px",
+            fontWeight: "600",
+            color: "#334155",
+            cursor: "pointer",
+          }}
+        >
+          Add Task
+        </button>
+      ) : (
+        <form
+          onSubmit={handleAddTask}
+          style={{
+            backgroundColor: "#f1f5f9",
+            padding: "12px",
+            borderRadius: "12px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "8px",
+          }}
+        >
+          <input
+            type="text"
+            placeholder="Task title..."
+            value={newTaskTitle}
+            onChange={(e) => setNewTaskTitle(e.target.value)}
+            style={{
+              padding: "8px",
+              borderRadius: "6px",
+              border: "1px solid #cbd5e1",
+              fontSize: "12px",
+            }}
+            autoFocus
+          />
+          <div style={{ display: "flex", gap: "8px" }}>
+            <select
+              value={newTaskPriority}
+              onChange={(e) => setNewTaskPriority(e.target.value)}
+              style={{
+                padding: "6px",
+                borderRadius: "6px",
+                border: "1px solid #cbd5e1",
+                fontSize: "12px",
+              }}
+            >
+              <option value="HIGH">HIGH</option>
+              <option value="MEDIUM">MEDIUM</option>
+              <option value="LOW">LOW</option>
+            </select>
+            <input
+              type="text"
+              placeholder="Tag"
+              value={newTaskTag}
+              onChange={(e) => setNewTaskTag(e.target.value)}
+              style={{
+                flex: 1,
+                padding: "6px",
+                borderRadius: "6px",
+                border: "1px solid #cbd5e1",
+                fontSize: "12px",
+              }}
+            />
+            <button
+              type="submit"
+              style={{
+                padding: "6px 12px",
+                backgroundColor: "#0f172a",
+                color: "#fff",
+                border: "none",
+                borderRadius: "6px",
+                fontSize: "12px",
+                cursor: "pointer",
+              }}
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsAdding(false)}
+              style={{
+                padding: "6px 12px",
+                backgroundColor: "#cbd5e1",
+                border: "none",
+                borderRadius: "6px",
+                fontSize: "12px",
+                cursor: "pointer",
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }
