@@ -1,0 +1,13 @@
+# Spring Boot
+.gradle/
+build/
+out/
+.idea/
+*.iml
+
+# Node / React
+src/frontend/node_modules/
+src/frontend/dist/
+
+# OS / Environment
+.DS_Store
