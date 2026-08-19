@@ -10,17 +10,19 @@ import java.util.List;
 @Mapper
 public interface TaskMapper {
 
-    List<TaskDto> findAll();
+    List<TaskDto> selectAllTasks();
 
     TaskDto findById(Long id);
 
-    void insertTask(TaskDto task);
+    void insertTask(TaskDto taskDto);
 
-    void updateTask(TaskDto task);
+    void updateTask(TaskDto taskDto);
 
-    void updateTaskStatus(@Param("id") Long id,
-                          @Param("status") TaskStatus status,
-                          @Param("displayOrder") Integer displayOrder);
+    void updateTaskStatus(
+            @Param("id") Long id,
+            @Param("status") TaskStatus status,
+            @Param("displayOrder") Integer displayOrder
+    );
 
     void deleteTask(Long id);
 }

@@ -4,9 +4,15 @@
 
 <mapper namespace="com.example.kanban.mapper.TaskMapper">
 
-    <select id="findAll" resultType="com.example.kanban.dto.TaskDto">
+    <!-- 전체 조회 (selectAllTasks로 id 변경) -->
+    <select id="selectAllTasks" resultType="com.example.kanban.dto.TaskDto">
         SELECT
-        id, title, description, status, category,
+        id,
+        title,
+        description,
+        status,
+        priority,
+        category,
         display_order AS displayOrder,
         created_at AS createdAt,
         updated_at AS updatedAt
@@ -14,43 +20,73 @@
         ORDER BY display_order ASC, id DESC
     </select>
 
+    <!-- 단일 조회 (findById) -->
     <select id="findById" resultType="com.example.kanban.dto.TaskDto">
-        SELECT id, title, description, status, category, display_order AS displayOrder, created_at AS createdAt, updated_at AS updatedAt
+        SELECT
+        id,
+        title,
+        description,
+        status,
+        priority,
+        category,
+        display_order AS displayOrder,
+        created_at AS createdAt,
+        updated_at AS updatedAt
         FROM tasks
         WHERE id = #{id}
     </select>
 
+    <!-- 태스크 생성 (insertTask) -->
     <insert id="insertTask" parameterType="com.example.kanban.dto.TaskDto" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO tasks (title, description, status, category, display_order)
-        VALUES (
+        INSERT INTO tasks (
+        title,
+        description,
+        status,
+        priority,
+        category,
+        display_order,
+        created_at,
+        updated_at
+        ) VALUES (
         #{title},
         #{description},
-        COALESCE(#{status}, 'TODO'),
+        #{status},
+        #{priority},
         #{category},
-        COALESCE(#{displayOrder}, 0)
+        #{displayOrder},
+        NOW(),
+        NOW()
         )
     </insert>
 
+    <!-- 태스크 정보 수정 (updateTask) -->
     <update id="updateTask" parameterType="com.example.kanban.dto.TaskDto">
         UPDATE tasks
-        SET title = #{title},
+        SET
+        title = #{title},
         description = #{description},
+        priority = #{priority},
         category = #{category},
-        status = #{status}
+        updated_at = NOW()
         WHERE id = #{id}
     </update>
 
+    <!-- 상태 및 순서 변경 (updateTaskStatus) -->
     <update id="updateTaskStatus">
         UPDATE tasks
-        SET status = #{status}
+        SET
+        status = #{status},
         <if test="displayOrder != null">
-            , display_order = #{displayOrder}
+            display_order = #{displayOrder},
         </if>
+        updated_at = NOW()
         WHERE id = #{id}
     </update>
 
+    <!-- 태스크 삭제 (deleteTask) -->
     <delete id="deleteTask">
-        DELETE FROM tasks WHERE id = #{id}
+        DELETE FROM tasks
+        WHERE id = #{id}
     </delete>
 
 </mapper>

@@ -1,35 +1,6 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 
-const initialTasks = [
-  {
-    id: "1",
-    title: "API Integration",
-    status: "TODO",
-    priority: "HIGH",
-    tag: "Dev",
-  },
-  {
-    id: "2",
-    title: "User Testing",
-    status: "TODO",
-    priority: "LOW",
-    tag: "QA",
-  },
-  {
-    id: "3",
-    title: "Design UI/UX",
-    status: "IN_PROGRESS",
-    priority: "MEDIUM",
-    tag: "Design",
-  },
-  {
-    id: "4",
-    title: "Initialize Project",
-    status: "DONE",
-    priority: "HIGH",
-    tag: "Dev",
-  },
-];
+const API_BASE_URL = "http://localhost:8080/api/tasks";
 
 const COLUMNS = [
   { id: "TODO", title: "To Do" },
@@ -38,7 +9,7 @@ const COLUMNS = [
 ];
 
 export default function KanbanBoard() {
-  const [tasks, setTasks] = useState(initialTasks);
+  const [tasks, setTasks] = useState([]);
   const [priorityFilter, setPriorityFilter] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [isAdding, setIsAdding] = useState(false);
@@ -46,38 +17,90 @@ export default function KanbanBoard() {
   const [newTaskPriority, setNewTaskPriority] = useState("MEDIUM");
   const [newTaskTag, setNewTaskTag] = useState("Dev");
 
-  const moveTask = (id, direction) => {
+  // 1. 백엔드에서 전체 작업 목록 불러오기 (GET)
+  const fetchTasks = async () => {
+    try {
+      const res = await fetch(API_BASE_URL);
+      if (res.ok) {
+        const data = await res.json();
+        setTasks(data);
+      }
+    } catch (error) {
+      console.error("DB 불러오기 실패:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchTasks();
+  }, []);
+
+  // 2. 상태 변경 (PATCH API)
+  const moveTask = async (id, direction) => {
+    const targetTask = tasks.find((t) => t.id === id);
+    if (!targetTask) return;
+
+    let newStatus = targetTask.status;
+    if (direction === "next") {
+      newStatus = targetTask.status === "TODO" ? "IN_PROGRESS" : "DONE";
+    } else {
+      newStatus = targetTask.status === "DONE" ? "IN_PROGRESS" : "TODO";
+    }
+
+    // UI 선반영
     setTasks((prev) =>
-      prev.map((task) => {
-        if (task.id !== id) return task;
-        if (direction === "next") {
-          const nextStatus = task.status === "TODO" ? "IN_PROGRESS" : "DONE";
-          return { ...task, status: nextStatus };
-        } else {
-          const prevStatus = task.status === "DONE" ? "IN_PROGRESS" : "TODO";
-          return { ...task, status: prevStatus };
-        }
-      }),
+      prev.map((t) => (t.id === id ? { ...t, status: newStatus } : t)),
     );
+
+    try {
+      await fetch(`${API_BASE_URL}/${id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+    } catch (error) {
+      console.error("상태 수정 실패:", error);
+      fetchTasks(); // 실패 시 원래 데이터 복원
+    }
   };
 
-  const deleteTask = (id) => {
+  // 3. 작업 삭제 (DELETE API)
+  const deleteTask = async (id) => {
     setTasks((prev) => prev.filter((t) => t.id !== id));
+    try {
+      await fetch(`${API_BASE_URL}/${id}`, { method: "DELETE" });
+    } catch (error) {
+      console.error("삭제 실패:", error);
+      fetchTasks();
+    }
   };
 
-  const handleAddTask = (e) => {
+  // 4. 작업 추가 (POST API)
+  const handleAddTask = async (e) => {
     e.preventDefault();
     if (!newTaskTitle.trim()) return;
-    const newTask = {
-      id: Date.now().toString(),
+
+    const newTaskData = {
       title: newTaskTitle,
       status: "TODO",
       priority: newTaskPriority,
       tag: newTaskTag,
     };
-    setTasks((prev) => [...prev, newTask]);
-    setNewTaskTitle("");
-    setIsAdding(false);
+
+    try {
+      const res = await fetch(API_BASE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newTaskData),
+      });
+
+      if (res.ok) {
+        setNewTaskTitle("");
+        setIsAdding(false);
+        fetchTasks(); // DB에 저장된 생성 데이터를 다시 받아옴
+      }
+    } catch (error) {
+      console.error("추가 실패:", error);
+    }
   };
 
   const filteredTasks = tasks.filter((task) => {
@@ -109,7 +132,6 @@ export default function KanbanBoard() {
         color: "#334155",
       }}
     >
-      {/* 타이틀 */}
       <h1
         style={{
           fontSize: "24px",
@@ -118,7 +140,7 @@ export default function KanbanBoard() {
           color: "#0f172a",
         }}
       >
-        Kanban Task Manager
+        Kanban Task Manager (MariaDB 연동)
       </h1>
 
       {/* 보드 영역 */}
@@ -153,7 +175,6 @@ export default function KanbanBoard() {
                   minHeight: "360px",
                 }}
               >
-                {/* 컬럼 헤더 */}
                 <div
                   style={{
                     display: "flex",
@@ -183,7 +204,6 @@ export default function KanbanBoard() {
                   </span>
                 </div>
 
-                {/* 태스크 카드 */}
                 <div
                   style={{
                     display: "flex",
