@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.example.kanban.mapper.TaskMapper">
+
+    <select id="findAll" resultType="com.example.kanban.dto.TaskDto">
+        SELECT
+        id, title, description, status, category,
+        display_order AS displayOrder,
+        created_at AS createdAt,
+        updated_at AS updatedAt
+        FROM tasks
+        ORDER BY display_order ASC, id DESC
+    </select>
+
+    <select id="findById" resultType="com.example.kanban.dto.TaskDto">
+        SELECT id, title, description, status, category, display_order AS displayOrder, created_at AS createdAt, updated_at AS updatedAt
+        FROM tasks
+        WHERE id = #{id}
+    </select>
+
+    <insert id="insertTask" parameterType="com.example.kanban.dto.TaskDto" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO tasks (title, description, status, category, display_order)
+        VALUES (
+        #{title},
+        #{description},
+        COALESCE(#{status}, 'TODO'),
+        #{category},
+        COALESCE(#{displayOrder}, 0)
+        )
+    </insert>
+
+    <update id="updateTask" parameterType="com.example.kanban.dto.TaskDto">
+        UPDATE tasks
+        SET title = #{title},
+        description = #{description},
+        category = #{category},
+        status = #{status}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateTaskStatus">
+        UPDATE tasks
+        SET status = #{status}
+        <if test="displayOrder != null">
+            , display_order = #{displayOrder}
+        </if>
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteTask">
+        DELETE FROM tasks WHERE id = #{id}
+    </delete>
+
+</mapper>
