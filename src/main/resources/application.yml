@@ -16,3 +16,8 @@ mybatis:
   # 카멜케이스 자동 매핑 (db_column -> dbColumn)
   configuration:
     map-underscore-to-camel-case: true
+
+logging:
+  level:
+    # Mapper 인터페이스가 모여있는 패키지 경로를 지정합니다.
+    com.example.kanban.mapper: DEBUG
