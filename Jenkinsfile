@@ -9,7 +9,7 @@ pipeline {
         NGINX_ROOT   = '/usr/share/nginx/html/react-kanban-app'
 
         // 실행 환경 설정
-        JAVA_HOME    = '/usr/lib/jvm/java-17-openjdk-amd64'
+        JAVA_HOME    = '/usr/lib/jvm/java-21-openjdk-amd64'
         APP_PORT     = '8082'
         PATH         = "/usr/local/bin:/usr/bin:/bin:${env.PATH}"
     }
