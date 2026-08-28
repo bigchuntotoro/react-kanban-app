@@ -1,4 +1,4 @@
-const API_BASE_URL = "http://localhost:8082/api/tasks";
+const API_BASE_URL = "/api/tasks";
 
 // 전체 조회
 export const getTasks = async () => {
