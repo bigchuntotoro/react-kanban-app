@@ -5,7 +5,7 @@ pipeline {
         // 배포 경로 설정
         TARGET_DIR   = '/home/totoro/Reactproject/react-kanban-app'
         APP_NAME     = 'react-kanban-app'
-        FRONTEND_DIR = "${WORKSPACE}/src/main/frontend"
+        FRONTEND_DIR = "${WORKSPACE}/src/frontend"
         NGINX_ROOT   = '/usr/share/nginx/html/react-kanban-app'
 
         // 실행 환경 설정
