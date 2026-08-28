@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useMemo } from "react";
-
-const API_BASE_URL = "http://localhost:8080/api/tasks";
+import {
+  getTasks,
+  updateTaskStatus,
+  deleteTaskApi,
+  createTask,
+} from "./api/taskApi";
 
 const COLUMNS = [
   { id: "TODO", title: "To Do" },
@@ -15,16 +19,13 @@ export default function KanbanBoard() {
   const [isAdding, setIsAdding] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskPriority, setNewTaskPriority] = useState("MEDIUM");
-  const [newTaskTag, setNewTaskTag] = useState("Dev");
+  const [newTaskCategory, setNewTaskCategory] = useState("Dev");
 
-  // 1. 백엔드에서 전체 작업 목록 불러오기 (GET)
+  // 1. 백엔드에서 전체 작업 목록 불러오기
   const fetchTasks = async () => {
     try {
-      const res = await fetch(API_BASE_URL);
-      if (res.ok) {
-        const data = await res.json();
-        setTasks(data);
-      }
+      const data = await getTasks();
+      setTasks(data);
     } catch (error) {
       console.error("DB 불러오기 실패:", error);
     }
@@ -34,7 +35,7 @@ export default function KanbanBoard() {
     fetchTasks();
   }, []);
 
-  // 2. 상태 변경 (PATCH API)
+  // 2. 상태 변경
   const moveTask = async (id, direction) => {
     const targetTask = tasks.find((t) => t.id === id);
     if (!targetTask) return;
@@ -46,35 +47,33 @@ export default function KanbanBoard() {
       newStatus = targetTask.status === "DONE" ? "IN_PROGRESS" : "TODO";
     }
 
-    // UI 선반영
+    // UI 선반영 (Optimistic Update)
     setTasks((prev) =>
       prev.map((t) => (t.id === id ? { ...t, status: newStatus } : t)),
     );
 
     try {
-      await fetch(`${API_BASE_URL}/${id}/status`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
-      });
+      await updateTaskStatus(id, newStatus);
     } catch (error) {
       console.error("상태 수정 실패:", error);
-      fetchTasks(); // 실패 시 원래 데이터 복원
+      fetchTasks(); // 실패 시 백엔드 데이터로 원복
     }
   };
 
-  // 3. 작업 삭제 (DELETE API)
-  const deleteTask = async (id) => {
+  // 3. 작업 삭제
+  const handleDeleteTask = async (id) => {
+    // UI 선반영
     setTasks((prev) => prev.filter((t) => t.id !== id));
+
     try {
-      await fetch(`${API_BASE_URL}/${id}`, { method: "DELETE" });
+      await deleteTaskApi(id);
     } catch (error) {
       console.error("삭제 실패:", error);
       fetchTasks();
     }
   };
 
-  // 4. 작업 추가 (POST API)
+  // 4. 작업 추가
   const handleAddTask = async (e) => {
     e.preventDefault();
     if (!newTaskTitle.trim()) return;
@@ -83,35 +82,31 @@ export default function KanbanBoard() {
       title: newTaskTitle,
       status: "TODO",
       priority: newTaskPriority,
-      tag: newTaskTag,
+      category: newTaskCategory, // DB 필드명 통일
     };
 
     try {
-      const res = await fetch(API_BASE_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newTaskData),
-      });
-
-      if (res.ok) {
-        setNewTaskTitle("");
-        setIsAdding(false);
-        fetchTasks(); // DB에 저장된 생성 데이터를 다시 받아옴
-      }
+      await createTask(newTaskData);
+      setNewTaskTitle("");
+      setNewTaskCategory("Dev");
+      setIsAdding(false);
+      fetchTasks();
     } catch (error) {
       console.error("추가 실패:", error);
     }
   };
 
+  // 필터링 적용
   const filteredTasks = tasks.filter((task) => {
     const matchesPriority =
       priorityFilter === "All" || task.priority === priorityFilter;
     const matchesSearch = task.title
-      .toLowerCase()
+      ?.toLowerCase()
       .includes(searchQuery.toLowerCase());
     return matchesPriority && matchesSearch;
   });
 
+  // KPI 지표 계산
   const metrics = useMemo(() => {
     const total = tasks.length;
     const done = tasks.filter((t) => t.status === "DONE").length;
@@ -253,7 +248,7 @@ export default function KanbanBoard() {
                           {task.priority}
                         </span>
                         <button
-                          onClick={() => deleteTask(task.id)}
+                          onClick={() => handleDeleteTask(task.id)}
                           style={{
                             border: "none",
                             background: "none",
@@ -284,7 +279,7 @@ export default function KanbanBoard() {
                         }}
                       >
                         <span style={{ fontSize: "11px", color: "#94a3b8" }}>
-                          #{task.tag}
+                          #{task.category || task.tag || "General"}
                         </span>
                         <div style={{ display: "flex", gap: "4px" }}>
                           {task.status !== "TODO" && (
@@ -444,7 +439,7 @@ export default function KanbanBoard() {
         </div>
       </div>
 
-      {/* 추가 버튼 */}
+      {/* 추가 버튼 및 폼 */}
       {!isAdding ? (
         <button
           onClick={() => setIsAdding(true)}
@@ -504,9 +499,9 @@ export default function KanbanBoard() {
             </select>
             <input
               type="text"
-              placeholder="Tag"
-              value={newTaskTag}
-              onChange={(e) => setNewTaskTag(e.target.value)}
+              placeholder="Category"
+              value={newTaskCategory}
+              onChange={(e) => setNewTaskCategory(e.target.value)}
               style={{
                 flex: 1,
                 padding: "6px",
