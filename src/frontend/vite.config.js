@@ -6,7 +6,7 @@ export default defineConfig({
   server: {
     proxy: {
       "/api": {
-        target: "http://localhost:8080", // 스프링 부트 서버 포트
+        target: "http://localhost:8082", // 스프링 부트 서버 포트
         changeOrigin: true,
       },
     },
