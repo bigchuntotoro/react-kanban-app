@@ -4,7 +4,7 @@ import {
   updateTaskStatus,
   deleteTaskApi,
   createTask,
-} from "./api/taskApi";
+} from "../api/taskApi";
 
 const COLUMNS = [
   { id: "TODO", title: "To Do" },
