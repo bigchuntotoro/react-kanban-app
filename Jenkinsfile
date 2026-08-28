@@ -67,31 +67,46 @@ pipeline {
                 sh '''
                     echo "==> Preparing Target Directory"
                     mkdir -p ${TARGET_DIR}
+                    mkdir -p ${TARGET_DIR}/logs
 
                     echo "==> Copying Spring Boot Executable JAR"
                     # plain.jar 제외한 실행 가능한 bootJar만 선택 복사
                     BUILD_JAR=$(find build/libs -name "*.jar" ! -name "*-plain.jar" | head -n 1)
+
                     if [ -z "$BUILD_JAR" ]; then
                         echo "오류: JAR 파일을 찾을 수 없습니다."
                         exit 1
                     fi
+
                     cp -f "$BUILD_JAR" ${TARGET_DIR}/${APP_NAME}.jar
 
                     cd ${TARGET_DIR}
 
                     echo "==> Restarting Backend Service via PM2"
-                    # 기존 프로세스가 등록되어 있다면 정리 후 재시작
+
+                    # 기존 프로세스 삭제
                     if pm2 describe ${APP_NAME} > /dev/null 2>&1; then
                         echo "Cleaning up existing PM2 process..."
                         pm2 delete ${APP_NAME}
                     fi
 
-                    echo "Starting new PM2 process for Java..."
+                    echo "==> Starting Spring Boot"
+
                     pm2 start java \
                       --name "${APP_NAME}" \
-                      -- -jar -Dserver.port=${APP_PORT} ${APP_NAME}.jar
+                      --output "${TARGET_DIR}/logs/backend-out.log" \
+                      --error "${TARGET_DIR}/logs/backend-error.log" \
+                      --time \
+                      -- \
+                      -jar \
+                      -Dserver.port=${APP_PORT} \
+                      ${APP_NAME}.jar
 
                     pm2 save
+
+                    echo "==> Backend log files"
+                    echo "OUT   : ${TARGET_DIR}/logs/backend-out.log"
+                    echo "ERROR : ${TARGET_DIR}/logs/backend-error.log"
                 '''
             }
         }
