@@ -5,6 +5,8 @@ pipeline {
         // 배포 경로 설정
         TARGET_DIR   = '/home/totoro/Reactproject/react-kanban-app'
         APP_NAME     = 'react-kanban-app'
+        SERVICE_NAME = 'react-kanban-app'
+
         FRONTEND_DIR = "${WORKSPACE}/src/frontend"
         NGINX_ROOT   = '/usr/share/nginx/html/react-kanban-app'
 
@@ -15,109 +17,300 @@ pipeline {
     }
 
     stages {
+
         stage('1. Build Frontend (React)') {
             steps {
                 dir("${FRONTEND_DIR}") {
                     sh '''
-                        echo "==> Node/NPM Dependencies Installation"
+                        set -e
+
+                        echo "=============================================="
+                        echo "1. Build Frontend (React)"
+                        echo "=============================================="
+
+                        echo "==> Node Version"
+                        node --version
+
+                        echo "==> NPM Version"
+                        npm --version
+
+                        echo "==> Installing Dependencies"
                         npm install
 
                         echo "==> Building Frontend Application"
                         npm run build
+
+                        echo "==> Frontend Build Completed"
                     '''
                 }
             }
         }
 
+
         stage('2. Build Backend (Spring Boot)') {
             steps {
                 sh '''
+                    set -e
+
+                    echo "=============================================="
+                    echo "2. Build Backend (Spring Boot)"
+                    echo "=============================================="
+
+                    echo "==> Java Version"
+                    ${JAVA_HOME}/bin/java -version
+
                     echo "==> Granting Execution Permission to Gradle Wrapper"
                     chmod +x ./gradlew
 
-                    echo "==> Building Spring Boot JAR (Skipping Frontend Task inside Gradle)"
+                    echo "==> Building Spring Boot JAR"
                     ./gradlew clean bootJar -x test
+
+                    echo "==> Build Result"
+                    ls -lh build/libs/
                 '''
             }
         }
+
 
         stage('3. Deploy Frontend to Nginx') {
             steps {
                 sh '''
-                    echo "==> Syncing Frontend Assets to Nginx Directory"
-                    sudo mkdir -p ${NGINX_ROOT}
+                    set -e
 
-                    # Vite 빌드 결과물(dist) 또는 CRA 결과물(build)을 Nginx 웹 루트로 복사
+                    echo "=============================================="
+                    echo "3. Deploy Frontend to Nginx"
+                    echo "=============================================="
+
+                    echo "==> Creating Nginx Directory"
+                    sudo mkdir -p "${NGINX_ROOT}"
+
+                    # Vite
                     if [ -d "${FRONTEND_DIR}/dist" ]; then
-                        sudo rsync -av --delete ${FRONTEND_DIR}/dist/ ${NGINX_ROOT}/
+
+                        echo "==> Vite dist directory detected"
+
+                        sudo rsync -av --delete \
+                            "${FRONTEND_DIR}/dist/" \
+                            "${NGINX_ROOT}/"
+
+                    # CRA
                     elif [ -d "${FRONTEND_DIR}/build" ]; then
-                        sudo rsync -av --delete ${FRONTEND_DIR}/build/ ${NGINX_ROOT}/
+
+                        echo "==> React build directory detected"
+
+                        sudo rsync -av --delete \
+                            "${FRONTEND_DIR}/build/" \
+                            "${NGINX_ROOT}/"
+
+                    else
+
+                        echo "ERROR: Frontend build directory not found."
+                        exit 1
+
                     fi
 
-                    sudo chown -R www-data:www-data ${NGINX_ROOT}
+                    echo "==> Setting Nginx Ownership"
+                    sudo chown -R www-data:www-data "${NGINX_ROOT}"
 
-                    echo "==> Reloading Nginx Service"
+                    echo "==> Reloading Nginx"
                     sudo systemctl reload nginx
+
+                    echo "==> Nginx Reload Completed"
                 '''
             }
         }
 
-        stage('4. Deploy Backend & Restart Application') {
+
+        stage('4. Deploy Backend JAR') {
             steps {
                 sh '''
-                    echo "==> Preparing Target Directory"
-                    mkdir -p ${TARGET_DIR}
-                    mkdir -p ${TARGET_DIR}/logs
+                    set -e
 
-                    echo "==> Copying Spring Boot Executable JAR"
-                    # plain.jar 제외한 실행 가능한 bootJar만 선택 복사
-                    BUILD_JAR=$(find build/libs -name "*.jar" ! -name "*-plain.jar" | head -n 1)
+                    echo "=============================================="
+                    echo "4. Deploy Backend JAR"
+                    echo "=============================================="
+
+                    echo "==> Preparing Target Directory"
+
+                    mkdir -p "${TARGET_DIR}"
+                    mkdir -p "${TARGET_DIR}/logs"
+
+                    echo "==> Searching Spring Boot JAR"
+
+                    BUILD_JAR=$(find build/libs \
+                        -maxdepth 1 \
+                        -type f \
+                        -name "*.jar" \
+                        ! -name "*-plain.jar" \
+                        | head -n 1)
 
                     if [ -z "$BUILD_JAR" ]; then
-                        echo "오류: JAR 파일을 찾을 수 없습니다."
+                        echo "ERROR: Spring Boot JAR file not found."
                         exit 1
                     fi
 
-                    cp -f "$BUILD_JAR" ${TARGET_DIR}/${APP_NAME}.jar
+                    echo "==> Found JAR:"
+                    echo "$BUILD_JAR"
 
-                    cd ${TARGET_DIR}
+                    echo "==> Copying JAR"
 
-                    echo "==> Restarting Backend Service via PM2"
+                    cp -f "$BUILD_JAR" \
+                        "${TARGET_DIR}/${APP_NAME}.jar"
 
-                    # 기존 프로세스 삭제
-                    if pm2 describe ${APP_NAME} > /dev/null 2>&1; then
-                        echo "Cleaning up existing PM2 process..."
-                        pm2 delete ${APP_NAME}
+                    echo "==> Deployed JAR:"
+                    ls -lh "${TARGET_DIR}/${APP_NAME}.jar"
+
+                    echo "==> Setting Application Ownership"
+
+                    sudo chown totoro:totoro \
+                        "${TARGET_DIR}/${APP_NAME}.jar"
+
+                    sudo chown -R totoro:totoro \
+                        "${TARGET_DIR}/logs"
+
+                    echo "==> Backend JAR Deployment Completed"
+                '''
+            }
+        }
+
+
+        stage('5. Restart Backend with systemd') {
+            steps {
+                sh '''
+                    set -e
+
+                    echo "=============================================="
+                    echo "5. Restart Backend with systemd"
+                    echo "=============================================="
+
+                    echo "==> Reloading systemd"
+
+                    sudo systemctl daemon-reload
+
+                    echo "==> Restarting ${SERVICE_NAME}"
+
+                    sudo systemctl restart "${SERVICE_NAME}"
+
+                    echo "==> Waiting for Application Startup"
+
+                    sleep 5
+
+                    echo "==> Checking Service Status"
+
+                    if ! sudo systemctl is-active --quiet "${SERVICE_NAME}"; then
+
+                        echo "ERROR: ${SERVICE_NAME} failed to start."
+
+                        echo "=============================================="
+                        echo "systemctl status"
+                        echo "=============================================="
+
+                        sudo systemctl --no-pager -l status "${SERVICE_NAME}" || true
+
+                        echo "=============================================="
+                        echo "journalctl"
+                        echo "=============================================="
+
+                        sudo journalctl \
+                            -u "${SERVICE_NAME}" \
+                            -n 100 \
+                            --no-pager || true
+
+                        echo "=============================================="
+                        echo "Backend Error Log"
+                        echo "=============================================="
+
+                        tail -100 \
+                            "${TARGET_DIR}/logs/backend-error.log" || true
+
+                        exit 1
                     fi
 
-                    echo "==> Starting Spring Boot"
+                    echo "==> Backend Service is ACTIVE"
 
-                    pm2 start java \
-                      --name "${APP_NAME}" \
-                      --output "${TARGET_DIR}/logs/backend-out.log" \
-                      --error "${TARGET_DIR}/logs/backend-error.log" \
-                      --time \
-                      -- \
-                      -jar \
-                      -Dserver.port=${APP_PORT} \
-                      ${APP_NAME}.jar
+                    echo "=============================================="
+                    echo "Checking Port ${APP_PORT}"
+                    echo "=============================================="
 
-                    pm2 save
+                    for i in $(seq 1 30); do
 
-                    echo "==> Backend log files"
-                    echo "OUT   : ${TARGET_DIR}/logs/backend-out.log"
-                    echo "ERROR : ${TARGET_DIR}/logs/backend-error.log"
+                        if curl -s \
+                            --connect-timeout 1 \
+                            "http://127.0.0.1:${APP_PORT}/api/boards" \
+                            > /dev/null 2>&1; then
+
+                            echo "Backend is responding on port ${APP_PORT}"
+                            break
+                        fi
+
+                        if [ "$i" -eq 30 ]; then
+
+                            echo "ERROR: Backend did not respond on port ${APP_PORT}"
+
+                            sudo systemctl --no-pager -l status \
+                                "${SERVICE_NAME}" || true
+
+                            sudo journalctl \
+                                -u "${SERVICE_NAME}" \
+                                -n 100 \
+                                --no-pager || true
+
+                            exit 1
+                        fi
+
+                        sleep 1
+                    done
+
+                    echo "=============================================="
+                    echo "Backend Deployment Completed"
+                    echo "=============================================="
+
+                    echo "Service : ${SERVICE_NAME}"
+                    echo "Port    : ${APP_PORT}"
+                    echo "JAR     : ${TARGET_DIR}/${APP_NAME}.jar"
                 '''
             }
         }
     }
 
+
     post {
+
         success {
-            echo "Successfully deployed ${APP_NAME}!"
+            echo """
+==============================================
+Deployment SUCCESS
+==============================================
+
+Application : ${env.APP_NAME}
+Service     : ${env.SERVICE_NAME}
+Backend Port: ${env.APP_PORT}
+Frontend    : ${env.NGINX_ROOT}
+
+Spring Boot : systemd
+Nginx       : systemd
+
+==============================================
+"""
         }
+
         failure {
-            echo "Deployment failed. Check Jenkins console logs."
+            echo """
+==============================================
+Deployment FAILED
+==============================================
+
+Application : ${env.APP_NAME}
+Service     : ${env.SERVICE_NAME}
+
+Check Jenkins Console and systemd logs.
+
+==============================================
+"""
+        }
+
+        always {
+            echo "Jenkins Pipeline Finished"
         }
     }
 }
