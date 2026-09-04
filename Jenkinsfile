@@ -64,10 +64,13 @@ pipeline {
                     chmod +x ./gradlew
 
                     echo "==> Building Spring Boot JAR"
+
                     ./gradlew clean bootJar -x test
 
                     echo "==> Build Result"
                     ls -lh build/libs/
+
+                    echo "==> Backend Build Completed"
                 '''
             }
         }
@@ -86,6 +89,7 @@ pipeline {
 
                     sudo mkdir -p "${NGINX_ROOT}"
 
+
                     # Vite
                     if [ -d "${FRONTEND_DIR}/dist" ]; then
 
@@ -95,7 +99,8 @@ pipeline {
                             "${FRONTEND_DIR}/dist/" \
                             "${NGINX_ROOT}/"
 
-                    # CRA
+
+                    # Create React App
                     elif [ -d "${FRONTEND_DIR}/build" ]; then
 
                         echo "==> React build directory detected"
@@ -104,21 +109,31 @@ pipeline {
                             "${FRONTEND_DIR}/build/" \
                             "${NGINX_ROOT}/"
 
+
                     else
 
                         echo "ERROR: Frontend build directory not found."
+
                         exit 1
 
                     fi
+
 
                     echo "==> Setting Nginx Ownership"
 
                     sudo chown -R www-data:www-data \
                         "${NGINX_ROOT}"
 
+
+                    echo "==> Testing Nginx Configuration"
+
+                    sudo nginx -t
+
+
                     echo "==> Reloading Nginx"
 
                     sudo systemctl reload nginx
+
 
                     echo "==> Nginx Reload Completed"
                 '''
@@ -140,6 +155,7 @@ pipeline {
                     sudo mkdir -p "${TARGET_DIR}"
                     sudo mkdir -p "${TARGET_DIR}/logs"
 
+
                     echo "==> Searching Spring Boot JAR"
 
                     BUILD_JAR=$(find build/libs \
@@ -149,32 +165,42 @@ pipeline {
                         ! -name "*-plain.jar" \
                         | head -n 1)
 
+
                     if [ -z "$BUILD_JAR" ]; then
+
                         echo "ERROR: Spring Boot JAR file not found."
+
                         exit 1
+
                     fi
+
 
                     echo "==> Found JAR:"
                     echo "$BUILD_JAR"
 
+
                     echo "==> Copying JAR"
 
-                    # 기존 JAR이 totoro 소유이거나 root 소유여도
-                    # Jenkins가 sudo를 통해 교체할 수 있도록 처리
                     sudo cp -f \
                         "$BUILD_JAR" \
                         "${TARGET_DIR}/${APP_NAME}.jar"
+
 
                     echo "==> Setting Application Ownership"
 
                     sudo chown totoro:totoro \
                         "${TARGET_DIR}/${APP_NAME}.jar"
 
+
                     sudo chown -R totoro:totoro \
                         "${TARGET_DIR}/logs"
 
+
                     echo "==> Deployed JAR:"
-                    ls -lh "${TARGET_DIR}/${APP_NAME}.jar"
+
+                    ls -lh \
+                        "${TARGET_DIR}/${APP_NAME}.jar"
+
 
                     echo "==> Backend JAR Deployment Completed"
                 '''
@@ -191,19 +217,23 @@ pipeline {
                     echo "5. Restart Backend with systemd"
                     echo "=============================================="
 
+
                     echo "==> Reloading systemd"
 
                     sudo systemctl daemon-reload
+
 
                     echo "==> Restarting ${SERVICE_NAME}"
 
                     sudo systemctl restart "${SERVICE_NAME}"
 
+
                     echo "==> Waiting for Application Startup"
 
-                    sleep 5
+                    sleep 3
 
-                    echo "==> Checking Service Status"
+
+                    echo "==> Checking systemd Service"
 
                     if ! sudo systemctl is-active --quiet "${SERVICE_NAME}"; then
 
@@ -218,6 +248,7 @@ pipeline {
                             -l \
                             status "${SERVICE_NAME}" || true
 
+
                         echo "=============================================="
                         echo "journalctl"
                         echo "=============================================="
@@ -227,21 +258,22 @@ pipeline {
                             -n 100 \
                             --no-pager || true
 
-                        echo "=============================================="
-                        echo "Backend Error Log"
-                        echo "=============================================="
-
-                        tail -100 \
-                            "${TARGET_DIR}/logs/backend-error.log" || true
 
                         exit 1
+
                     fi
+
 
                     echo "==> Backend Service is ACTIVE"
 
+
                     echo "=============================================="
-                    echo "Checking Port ${APP_PORT}"
+                    echo "Checking Backend Port ${APP_PORT}"
                     echo "=============================================="
+
+
+                    BACKEND_OK=false
+
 
                     for i in $(seq 1 30); do
 
@@ -249,43 +281,70 @@ pipeline {
                             -o /dev/null \
                             -w "%{http_code}" \
                             --connect-timeout 1 \
-                            "http://127.0.0.1:${APP_PORT}/api/boards" \
+                            --max-time 3 \
+                            "http://127.0.0.1:${APP_PORT}/" \
                             || true)
 
+
                         if [ "$HTTP_STATUS" != "000" ]; then
-                            echo "Backend is responding on port ${APP_PORT}"
+
+                            echo "Backend is responding."
+
+                            echo "Port       : ${APP_PORT}"
                             echo "HTTP Status: ${HTTP_STATUS}"
+                            echo "Attempt    : ${i}/30"
+
+                            BACKEND_OK=true
+
                             break
+
                         fi
 
-                        if [ "$i" -eq 30 ]; then
-
-                            echo "ERROR: Backend did not respond on port ${APP_PORT}"
-
-                            sudo systemctl \
-                                --no-pager \
-                                -l \
-                                status "${SERVICE_NAME}" || true
-
-                            sudo journalctl \
-                                -u "${SERVICE_NAME}" \
-                                -n 100 \
-                                --no-pager || true
-
-                            exit 1
-                        fi
 
                         echo "Waiting for backend... ${i}/30"
+
                         sleep 1
+
                     done
+
+
+                    if [ "$BACKEND_OK" != "true" ]; then
+
+                        echo "=============================================="
+                        echo "ERROR: Backend did not respond"
+                        echo "=============================================="
+
+
+                        echo "==> systemctl status"
+
+                        sudo systemctl \
+                            --no-pager \
+                            -l \
+                            status "${SERVICE_NAME}" || true
+
+
+                        echo "==> journalctl"
+
+                        sudo journalctl \
+                            -u "${SERVICE_NAME}" \
+                            -n 100 \
+                            --no-pager || true
+
+
+                        exit 1
+
+                    fi
+
 
                     echo "=============================================="
                     echo "Backend Deployment Completed"
                     echo "=============================================="
 
+
                     echo "Service : ${SERVICE_NAME}"
                     echo "Port    : ${APP_PORT}"
                     echo "JAR     : ${TARGET_DIR}/${APP_NAME}.jar"
+
                 '''
             }
         }
@@ -295,6 +354,7 @@ pipeline {
     post {
 
         success {
+
             echo """
 ==============================================
 Deployment SUCCESS
@@ -312,7 +372,9 @@ Nginx       : systemd
 """
         }
 
+
         failure {
+
             echo """
 ==============================================
 Deployment FAILED
@@ -328,8 +390,11 @@ Check Jenkins Console and systemd logs.
 """
         }
 
+
         always {
+
             echo "Jenkins Pipeline Finished"
+
         }
     }
 }
