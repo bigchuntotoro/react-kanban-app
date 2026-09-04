@@ -2,15 +2,16 @@ pipeline {
     agent any
 
     environment {
-        // 배포 경로 설정
+        // 배포 경로
         TARGET_DIR   = '/home/totoro/Reactproject/react-kanban-app'
         APP_NAME     = 'react-kanban-app'
         SERVICE_NAME = 'react-kanban-app'
 
+        // Frontend
         FRONTEND_DIR = "${WORKSPACE}/src/frontend"
         NGINX_ROOT   = '/usr/share/nginx/html/react-kanban-app'
 
-        // 실행 환경 설정
+        // 실행 환경
         JAVA_HOME    = '/usr/lib/jvm/java-21-openjdk-amd64'
         APP_PORT     = '8082'
         PATH         = "/usr/local/bin:/usr/bin:/bin:${env.PATH}"
@@ -82,6 +83,7 @@ pipeline {
                     echo "=============================================="
 
                     echo "==> Creating Nginx Directory"
+
                     sudo mkdir -p "${NGINX_ROOT}"
 
                     # Vite
@@ -110,9 +112,12 @@ pipeline {
                     fi
 
                     echo "==> Setting Nginx Ownership"
-                    sudo chown -R www-data:www-data "${NGINX_ROOT}"
+
+                    sudo chown -R www-data:www-data \
+                        "${NGINX_ROOT}"
 
                     echo "==> Reloading Nginx"
+
                     sudo systemctl reload nginx
 
                     echo "==> Nginx Reload Completed"
@@ -132,8 +137,8 @@ pipeline {
 
                     echo "==> Preparing Target Directory"
 
-                    mkdir -p "${TARGET_DIR}"
-                    mkdir -p "${TARGET_DIR}/logs"
+                    sudo mkdir -p "${TARGET_DIR}"
+                    sudo mkdir -p "${TARGET_DIR}/logs"
 
                     echo "==> Searching Spring Boot JAR"
 
@@ -154,11 +159,11 @@ pipeline {
 
                     echo "==> Copying JAR"
 
-                    cp -f "$BUILD_JAR" \
+                    # 기존 JAR이 totoro 소유이거나 root 소유여도
+                    # Jenkins가 sudo를 통해 교체할 수 있도록 처리
+                    sudo cp -f \
+                        "$BUILD_JAR" \
                         "${TARGET_DIR}/${APP_NAME}.jar"
-
-                    echo "==> Deployed JAR:"
-                    ls -lh "${TARGET_DIR}/${APP_NAME}.jar"
 
                     echo "==> Setting Application Ownership"
 
@@ -167,6 +172,9 @@ pipeline {
 
                     sudo chown -R totoro:totoro \
                         "${TARGET_DIR}/logs"
+
+                    echo "==> Deployed JAR:"
+                    ls -lh "${TARGET_DIR}/${APP_NAME}.jar"
 
                     echo "==> Backend JAR Deployment Completed"
                 '''
@@ -205,7 +213,10 @@ pipeline {
                         echo "systemctl status"
                         echo "=============================================="
 
-                        sudo systemctl --no-pager -l status "${SERVICE_NAME}" || true
+                        sudo systemctl \
+                            --no-pager \
+                            -l \
+                            status "${SERVICE_NAME}" || true
 
                         echo "=============================================="
                         echo "journalctl"
@@ -234,12 +245,16 @@ pipeline {
 
                     for i in $(seq 1 30); do
 
-                        if curl -s \
+                        HTTP_STATUS=$(curl -s \
+                            -o /dev/null \
+                            -w "%{http_code}" \
                             --connect-timeout 1 \
                             "http://127.0.0.1:${APP_PORT}/api/boards" \
-                            > /dev/null 2>&1; then
+                            || true)
 
+                        if [ "$HTTP_STATUS" != "000" ]; then
                             echo "Backend is responding on port ${APP_PORT}"
+                            echo "HTTP Status: ${HTTP_STATUS}"
                             break
                         fi
 
@@ -247,8 +262,10 @@ pipeline {
 
                             echo "ERROR: Backend did not respond on port ${APP_PORT}"
 
-                            sudo systemctl --no-pager -l status \
-                                "${SERVICE_NAME}" || true
+                            sudo systemctl \
+                                --no-pager \
+                                -l \
+                                status "${SERVICE_NAME}" || true
 
                             sudo journalctl \
                                 -u "${SERVICE_NAME}" \
@@ -258,6 +275,7 @@ pipeline {
                             exit 1
                         fi
 
+                        echo "Waiting for backend... ${i}/30"
                         sleep 1
                     done
 
@@ -302,6 +320,7 @@ Deployment FAILED
 
 Application : ${env.APP_NAME}
 Service     : ${env.SERVICE_NAME}
+Backend Port: ${env.APP_PORT}
 
 Check Jenkins Console and systemd logs.
 
