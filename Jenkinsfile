@@ -24,7 +24,7 @@ pipeline {
         // ============================================================
         // PATH
         // ============================================================
-        PATH = "/usr/local/bin:/usr/bin:/bin:${env.PATH}"
+        PATH = "/usr/local/bin:/usr/bin:/bin"
     }
 
     stages {
@@ -59,9 +59,11 @@ pipeline {
                         if [ -d "dist" ]; then
                             echo "Build directory : dist"
                             ls -lah dist
+
                         elif [ -d "build" ]; then
                             echo "Build directory : build"
                             ls -lah build
+
                         else
                             echo "ERROR: Frontend build directory not found."
                             exit 1
@@ -89,11 +91,17 @@ pipeline {
                     echo "==> Java Version"
                     ${JAVA_HOME}/bin/java -version
 
-                    echo "==> Gradle Version"
-                    ./gradlew --version
+                    echo "==> Gradle Wrapper Permission"
+                    ls -l ./gradlew
 
                     echo "==> Granting Gradle execute permission"
                     chmod +x ./gradlew
+
+                    echo "==> Gradle Wrapper Permission After chmod"
+                    ls -l ./gradlew
+
+                    echo "==> Gradle Version"
+                    ./gradlew --version
 
                     echo "==> Building Spring Boot JAR"
                     ./gradlew clean bootJar -x test
@@ -133,6 +141,8 @@ pipeline {
                     echo "3. Deploy Frontend to Nginx"
                     echo "=============================================="
 
+                    echo "Nginx Root: ${NGINX_ROOT}"
+
                     echo "==> Creating Nginx Directory"
 
                     sudo -n mkdir -p "${NGINX_ROOT}"
@@ -162,7 +172,8 @@ pipeline {
 
                     echo "==> Setting Nginx ownership"
 
-                    sudo -n chown -R www-data:www-data \
+                    sudo -n chown -R \
+                        www-data:www-data \
                         "${NGINX_ROOT}"
 
                     echo "==> Testing Nginx configuration"
@@ -190,6 +201,8 @@ pipeline {
                     echo "=============================================="
                     echo "4. Deploy Backend JAR"
                     echo "=============================================="
+
+                    echo "Target Directory: ${TARGET_DIR}"
 
                     echo "==> Creating application directory"
 
@@ -310,6 +323,7 @@ pipeline {
                     echo "=============================================="
 
                     BACKEND_OK=false
+                    HTTP_STATUS="000"
 
                     for i in $(seq 1 30); do
 
@@ -432,4 +446,3 @@ pipeline {
         }
     }
 }
-
