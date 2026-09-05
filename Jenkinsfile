@@ -333,7 +333,7 @@ pipeline {
                             -w "%{http_code}" \
                             --connect-timeout 1 \
                             --max-time 3 \
-                            "http://127.0.0.1:${APP_PORT}/" \
+                            "http://127.0.0.1:${APP_PORT}/api/tasks" \
                             || true)
 
                         if [ "$HTTP_STATUS" != "000" ]; then
