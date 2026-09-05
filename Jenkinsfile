@@ -356,38 +356,38 @@ pipeline {
         success {
 
             echo """
-==============================================
-Deployment SUCCESS
-==============================================
+            ==============================================
+            Deployment SUCCESS
+            ==============================================
 
-Application : ${env.APP_NAME}
-Service     : ${env.SERVICE_NAME}
-Backend Port: ${env.APP_PORT}
-Frontend    : ${env.NGINX_ROOT}
+            Application : ${env.APP_NAME}
+            Service     : ${env.SERVICE_NAME}
+            Backend Port: ${env.APP_PORT}
+            Frontend    : ${env.NGINX_ROOT}
 
-Spring Boot : systemd
-Nginx       : systemd
+            Spring Boot : systemd
+            Nginx       : systemd
 
-==============================================
-"""
+            ==============================================
+            """
         }
 
 
         failure {
 
             echo """
-==============================================
-Deployment FAILED
-==============================================
+            ==============================================
+            Deployment FAILED
+            ==============================================
 
-Application : ${env.APP_NAME}
-Service     : ${env.SERVICE_NAME}
-Backend Port: ${env.APP_PORT}
+            Application : ${env.APP_NAME}
+            Service     : ${env.SERVICE_NAME}
+            Backend Port: ${env.APP_PORT}
 
-Check Jenkins Console and systemd logs.
+            Check Jenkins Console and systemd logs.
 
-==============================================
-"""
+            ==============================================
+            """
         }
 
 
