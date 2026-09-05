@@ -2,23 +2,35 @@ pipeline {
     agent any
 
     environment {
-        // 배포 경로
+        // ==============================================
+        // Application
+        // ==============================================
         TARGET_DIR   = '/home/totoro/Reactproject/react-kanban-app'
         APP_NAME     = 'react-kanban-app'
         SERVICE_NAME = 'react-kanban-app'
 
+        // ==============================================
         // Frontend
+        // ==============================================
         FRONTEND_DIR = "${WORKSPACE}/src/frontend"
         NGINX_ROOT   = '/usr/share/nginx/html/react-kanban-app'
 
-        // 실행 환경
-        JAVA_HOME    = '/usr/lib/jvm/java-21-openjdk-amd64'
-        APP_PORT     = '8082'
-        PATH         = "/usr/local/bin:/usr/bin:/bin:${env.PATH}"
+        // ==============================================
+        // Runtime
+        // ==============================================
+        JAVA_HOME = '/usr/lib/jvm/java-21-openjdk-amd64'
+
+        // Spring Boot 실제 포트와 반드시 일치시킬 것
+        APP_PORT = '8083'
+
+        PATH = "/usr/local/bin:/usr/bin:/bin:${env.PATH}"
     }
 
     stages {
 
+        // ==================================================
+        // 1. Build Frontend
+        // ==================================================
         stage('1. Build Frontend (React)') {
             steps {
                 dir("${FRONTEND_DIR}") {
@@ -48,6 +60,9 @@ pipeline {
         }
 
 
+        // ==================================================
+        // 2. Build Backend
+        // ==================================================
         stage('2. Build Backend (Spring Boot)') {
             steps {
                 sh '''
@@ -60,7 +75,7 @@ pipeline {
                     echo "==> Java Version"
                     ${JAVA_HOME}/bin/java -version
 
-                    echo "==> Granting Execution Permission to Gradle Wrapper"
+                    echo "==> Granting Execution Permission"
                     chmod +x ./gradlew
 
                     echo "==> Building Spring Boot JAR"
@@ -76,6 +91,9 @@ pipeline {
         }
 
 
+        // ==================================================
+        // 3. Deploy Frontend
+        // ==================================================
         stage('3. Deploy Frontend to Nginx') {
             steps {
                 sh '''
@@ -90,7 +108,9 @@ pipeline {
                     sudo mkdir -p "${NGINX_ROOT}"
 
 
+                    # ------------------------------------------
                     # Vite
+                    # ------------------------------------------
                     if [ -d "${FRONTEND_DIR}/dist" ]; then
 
                         echo "==> Vite dist directory detected"
@@ -100,7 +120,9 @@ pipeline {
                             "${NGINX_ROOT}/"
 
 
+                    # ------------------------------------------
                     # Create React App
+                    # ------------------------------------------
                     elif [ -d "${FRONTEND_DIR}/build" ]; then
 
                         echo "==> React build directory detected"
@@ -141,6 +163,9 @@ pipeline {
         }
 
 
+        // ==================================================
+        // 4. Deploy Backend JAR
+        // ==================================================
         stage('4. Deploy Backend JAR') {
             steps {
                 sh '''
@@ -191,12 +216,11 @@ pipeline {
                     sudo chown totoro:totoro \
                         "${TARGET_DIR}/${APP_NAME}.jar"
 
-
                     sudo chown -R totoro:totoro \
                         "${TARGET_DIR}/logs"
 
 
-                    echo "==> Deployed JAR:"
+                    echo "==> Deployed JAR"
 
                     ls -lh \
                         "${TARGET_DIR}/${APP_NAME}.jar"
@@ -208,6 +232,9 @@ pipeline {
         }
 
 
+        // ==================================================
+        // 5. Restart Backend
+        // ==================================================
         stage('5. Restart Backend with systemd') {
             steps {
                 sh '''
@@ -217,43 +244,65 @@ pipeline {
                     echo "5. Restart Backend with systemd"
                     echo "=============================================="
 
+                    echo "==> Service Name"
+                    echo "${SERVICE_NAME}"
 
+                    echo "==> Backend Port"
+                    echo "${APP_PORT}"
+
+
+                    // ------------------------------------------
+                    // systemd reload
+                    // ------------------------------------------
                     echo "==> Reloading systemd"
 
-                    sudo systemctl daemon-reload
+                    sudo -n systemctl daemon-reload
 
 
+                    // ------------------------------------------
+                    // restart
+                    // ------------------------------------------
                     echo "==> Restarting ${SERVICE_NAME}"
 
-                    sudo systemctl restart "${SERVICE_NAME}"
+                    sudo -n systemctl restart "${SERVICE_NAME}"
 
 
+                    // ------------------------------------------
+                    // wait
+                    // ------------------------------------------
                     echo "==> Waiting for Application Startup"
 
-                    sleep 3
+                    sleep 5
 
 
+                    // ------------------------------------------
+                    // systemd status
+                    // ------------------------------------------
                     echo "==> Checking systemd Service"
 
-                    if ! sudo systemctl is-active --quiet "${SERVICE_NAME}"; then
-
-                        echo "ERROR: ${SERVICE_NAME} failed to start."
+                    if sudo -n systemctl is-active --quiet "${SERVICE_NAME}"; then
 
                         echo "=============================================="
-                        echo "systemctl status"
+                        echo "Backend systemd Service is ACTIVE"
                         echo "=============================================="
 
-                        sudo systemctl \
+                    else
+
+                        echo "=============================================="
+                        echo "ERROR: Backend Service is NOT ACTIVE"
+                        echo "=============================================="
+
+                        echo "==> systemctl status"
+
+                        sudo -n systemctl \
                             --no-pager \
                             -l \
                             status "${SERVICE_NAME}" || true
 
 
-                        echo "=============================================="
-                        echo "journalctl"
-                        echo "=============================================="
+                        echo "==> journalctl"
 
-                        sudo journalctl \
+                        sudo -n journalctl \
                             -u "${SERVICE_NAME}" \
                             -n 100 \
                             --no-pager || true
@@ -264,9 +313,9 @@ pipeline {
                     fi
 
 
-                    echo "==> Backend Service is ACTIVE"
-
-
+                    // ------------------------------------------
+                    // Backend HTTP Health Check
+                    // ------------------------------------------
                     echo "=============================================="
                     echo "Checking Backend Port ${APP_PORT}"
                     echo "=============================================="
@@ -286,13 +335,15 @@ pipeline {
                             || true)
 
 
+                        echo "Attempt ${i}/30"
+                        echo "HTTP Status: ${HTTP_STATUS}"
+
+
                         if [ "$HTTP_STATUS" != "000" ]; then
 
-                            echo "Backend is responding."
-
-                            echo "Port       : ${APP_PORT}"
-                            echo "HTTP Status: ${HTTP_STATUS}"
-                            echo "Attempt    : ${i}/30"
+                            echo "=============================================="
+                            echo "Backend is responding"
+                            echo "=============================================="
 
                             BACKEND_OK=true
 
@@ -301,13 +352,16 @@ pipeline {
                         fi
 
 
-                        echo "Waiting for backend... ${i}/30"
+                        echo "Waiting for backend..."
 
                         sleep 1
 
                     done
 
 
+                    // ------------------------------------------
+                    // Backend failed
+                    // ------------------------------------------
                     if [ "$BACKEND_OK" != "true" ]; then
 
                         echo "=============================================="
@@ -315,9 +369,14 @@ pipeline {
                         echo "=============================================="
 
 
+                        echo "==> Listening Ports"
+
+                        ss -lntp | grep "${APP_PORT}" || true
+
+
                         echo "==> systemctl status"
 
-                        sudo systemctl \
+                        sudo -n systemctl \
                             --no-pager \
                             -l \
                             status "${SERVICE_NAME}" || true
@@ -325,7 +384,7 @@ pipeline {
 
                         echo "==> journalctl"
 
-                        sudo journalctl \
+                        sudo -n journalctl \
                             -u "${SERVICE_NAME}" \
                             -n 100 \
                             --no-pager || true
@@ -336,21 +395,25 @@ pipeline {
                     fi
 
 
+                    // ------------------------------------------
+                    // Deployment success
+                    // ------------------------------------------
                     echo "=============================================="
                     echo "Backend Deployment Completed"
                     echo "=============================================="
 
-
                     echo "Service : ${SERVICE_NAME}"
                     echo "Port    : ${APP_PORT}"
                     echo "JAR     : ${TARGET_DIR}/${APP_NAME}.jar"
-
                 '''
             }
         }
     }
 
 
+    // ==================================================
+    // Post
+    // ==================================================
     post {
 
         success {
